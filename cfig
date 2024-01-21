@@ -32,6 +32,6 @@ ccap=75
   --enable-cuvid \
   --enable-nvdec \
   --enable-pic \
-  --enable-rpath
+  --enable-rpath $@
 
 
