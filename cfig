@@ -30,6 +30,7 @@ ccap=75
   --enable-nonfree \
   --enable-cuda-nvcc \
   --enable-libx264 \
+  --enable-libnpp \
   --enable-nvenc \
   --enable-cuvid \
   --enable-nvdec \
