@@ -1,0 +1,40 @@
+#!/bin/bash
+
+prefix=/usr/local/
+ccap=75
+
+./configure \
+  --prefix="${prefix}" \
+  --extra-cflags='-I/usr/local/cuda/include' \
+  --extra-ldflags='-L/usr/local/cuda/lib64' \
+  --nvccflags="-gencode arch=compute_${ccap},code=sm_${ccap} -O2" \
+  --disable-doc \
+  --enable-decoder=aac \
+  --enable-decoder=h264 \
+  --enable-decoder=h264_cuvid \
+  --enable-decoder=hevc_cuvid \
+  --enable-decoder=rawvideo \
+  --enable-indev=lavfi \
+  --enable-encoder=libx264 \
+  --enable-encoder=h264_nvenc \
+  --enable-encoder=hevc_nvenc \
+  --enable-demuxer=mov \
+  --enable-muxer=mp4 \
+  --enable-filter=scale \
+  --enable-filter=testsrc2 \
+  --enable-protocol=file \
+  --enable-protocol=https \
+  --enable-gnutls \
+  --enable-shared \
+  --enable-gpl \
+  --enable-nonfree \
+  --enable-cuda-nvcc \
+  --enable-libx264 \
+  --enable-libnpp \
+  --enable-nvenc \
+  --enable-cuvid \
+  --enable-nvdec \
+  --enable-pic \
+  --enable-rpath $@
+
+
