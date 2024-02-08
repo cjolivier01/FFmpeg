@@ -41,6 +41,8 @@
 #include "internal.h"
 #include "packet_internal.h"
 
+#include <libavutil/log.h>
+
 #define CHECK_CU(x) FF_CUDA_CHECK_DL(avctx, dl_fn->cuda_dl, x)
 
 #define NVENC_CAP 0x30
@@ -448,7 +450,7 @@ static int nvenc_check_cap(AVCodecContext *avctx, NV_ENC_CAPS cap)
     return 0;
 }
 
-static int nvenc_check_capabilities(AVCodecContext *avctx)
+static int _nvenc_check_capabilities(AVCodecContext *avctx)
 {
     NvencContext *ctx = avctx->priv_data;
     int tmp, ret;
@@ -597,6 +599,14 @@ static int nvenc_check_capabilities(AVCodecContext *avctx)
     ctx->support_dyn_bitrate = nvenc_check_cap(avctx, NV_ENC_CAPS_SUPPORT_DYN_BITRATE_CHANGE);
 
     return 0;
+}
+
+static int nvenc_check_capabilities(AVCodecContext *avctx) {
+    int ret, old_level = av_log_get_level();
+    av_log_set_level(AV_LOG_INFO);
+    ret = _nvenc_check_capabilities(avctx);
+    av_log_set_level(old_level);
+    return ret;
 }
 
 static av_cold int nvenc_check_device(AVCodecContext *avctx, int idx)
