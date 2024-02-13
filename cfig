@@ -3,7 +3,8 @@
 prefix=/usr/local/
 ccap=75
 
-./configure \
+NVCCFLAGS="-gencode arch=compute_60,code=sm_60 -gencode arch=compute_61,code=sm_61 -gencode arch=compute_75,code=sm_75" \
+  ./configure \
   --prefix="${prefix}" \
   --extra-cflags='-I/usr/local/cuda/include' \
   --extra-ldflags='-L/usr/local/cuda/lib64' \
