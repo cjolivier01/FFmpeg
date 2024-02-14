@@ -597,7 +597,7 @@ static int nvenc_check_capabilities(AVCodecContext *avctx) {
     int ret, old_level = av_log_get_level();
     av_log_set_level(AV_LOG_INFO);
     ret = _nvenc_check_capabilities(avctx);
-    //av_log_set_level(old_level);
+    av_log_set_level(old_level);
     return ret;
 }
 
