@@ -1,14 +1,14 @@
 #!/bin/bash
 
 prefix=/usr/local/
-ccap=75
+ccap1=75
 
 NVCCFLAGS="-gencode arch=compute_60,code=sm_60 -gencode arch=compute_61,code=sm_61 -gencode arch=compute_75,code=sm_75" \
   ./configure \
   --prefix="${prefix}" \
   --extra-cflags='-I/usr/local/cuda/include' \
   --extra-ldflags='-L/usr/local/cuda/lib64' \
-  --nvccflags="-gencode arch=compute_${ccap},code=sm_${ccap} -O2" \
+  --nvccflags="-gencode arch=compute_${ccap1},code=sm_${ccap1} -O2" \
   --disable-doc \
   --enable-decoder=aac \
   --enable-decoder=h264 \
