@@ -1,0 +1,43 @@
+#!/bin/bash
+
+prefix=/usr/local/
+ccap1=75
+
+NVCCFLAGS="-gencode arch=compute_60,code=sm_60 -gencode arch=compute_61,code=sm_61 -gencode arch=compute_75,code=sm_75" \
+  ./configure \
+  --prefix="${prefix}" \
+  --extra-cflags='-I/usr/local/cuda/include' \
+  --extra-ldflags='-L/usr/local/cuda/lib64' \
+  --nvccflags="-gencode arch=compute_${ccap1},code=sm_${ccap1} -O2" \
+  --disable-doc \
+  --enable-decoder=aac \
+  --enable-decoder=h264 \
+  --enable-decoder=h264_cuvid \
+  --enable-decoder=hevc_cuvid \
+  --enable-decoder=av1_cuvid \
+  --enable-decoder=rawvideo \
+  --enable-indev=lavfi \
+  --enable-encoder=libx264 \
+  --enable-encoder=h264_nvenc \
+  --enable-encoder=hevc_nvenc \
+  --enable-encoder=av1_nvenc \
+  --enable-demuxer=mov \
+  --enable-muxer=mp4 \
+  --enable-filter=scale \
+  --enable-filter=testsrc2 \
+  --enable-protocol=file \
+  --enable-protocol=https \
+  --enable-gnutls \
+  --enable-shared \
+  --enable-gpl \
+  --enable-nonfree \
+  --enable-cuda-nvcc \
+  --enable-libx264 \
+  --enable-libnpp \
+  --enable-nvenc \
+  --enable-cuvid \
+  --enable-nvdec \
+  --enable-pic \
+  --enable-rpath $@
+
+
