@@ -23,8 +23,8 @@
 
 #include "libavutil/avassert.h"
 #include "libavutil/common.h"
+#include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
-#include "libavutil/internal.h"
 #include "libavutil/opt.h"
 
 #include "atsc_a53.h"
@@ -34,7 +34,6 @@
 #include "codec_internal.h"
 #include "h264.h"
 #include "h264_levels.h"
-#include "h264_sei.h"
 #include "h2645data.h"
 #include "vaapi_encode.h"
 #include "version.h"
@@ -628,7 +627,7 @@ static int vaapi_encode_h264_init_picture_params(AVCodecContext *avctx,
     VAAPIEncodePicture              *prev = pic->prev;
     VAAPIEncodeH264Picture         *hprev = prev ? prev->priv_data : NULL;
     VAEncPictureParameterBufferH264 *vpic = pic->codec_picture_params;
-    int i;
+    int i, j = 0;
 
     if (pic->type == PICTURE_TYPE_IDR) {
         av_assert0(pic->display_order == pic->encode_order);
@@ -729,24 +728,26 @@ static int vaapi_encode_h264_init_picture_params(AVCodecContext *avctx,
         .TopFieldOrderCnt    = hpic->pic_order_cnt,
         .BottomFieldOrderCnt = hpic->pic_order_cnt,
     };
+    for (int k = 0; k < MAX_REFERENCE_LIST_NUM; k++) {
+        for (i = 0; i < pic->nb_refs[k]; i++) {
+            VAAPIEncodePicture      *ref = pic->refs[k][i];
+            VAAPIEncodeH264Picture *href;
 
-    for (i = 0; i < pic->nb_refs; i++) {
-        VAAPIEncodePicture      *ref = pic->refs[i];
-        VAAPIEncodeH264Picture *href;
+            av_assert0(ref && ref->encode_order < pic->encode_order);
+            href = ref->priv_data;
 
-        av_assert0(ref && ref->encode_order < pic->encode_order);
-        href = ref->priv_data;
-
-        vpic->ReferenceFrames[i] = (VAPictureH264) {
-            .picture_id          = ref->recon_surface,
-            .frame_idx           = href->frame_num,
-            .flags               = VA_PICTURE_H264_SHORT_TERM_REFERENCE,
-            .TopFieldOrderCnt    = href->pic_order_cnt,
-            .BottomFieldOrderCnt = href->pic_order_cnt,
-        };
+            vpic->ReferenceFrames[j++] = (VAPictureH264) {
+                .picture_id          = ref->recon_surface,
+                .frame_idx           = href->frame_num,
+                .flags               = VA_PICTURE_H264_SHORT_TERM_REFERENCE,
+                .TopFieldOrderCnt    = href->pic_order_cnt,
+                .BottomFieldOrderCnt = href->pic_order_cnt,
+            };
+        }
     }
-    for (; i < FF_ARRAY_ELEMS(vpic->ReferenceFrames); i++) {
-        vpic->ReferenceFrames[i] = (VAPictureH264) {
+
+    for (; j < FF_ARRAY_ELEMS(vpic->ReferenceFrames); j++) {
+        vpic->ReferenceFrames[j] = (VAPictureH264) {
             .picture_id = VA_INVALID_ID,
             .flags      = VA_PICTURE_H264_INVALID,
         };
@@ -948,17 +949,17 @@ static int vaapi_encode_h264_init_slice_params(AVCodecContext *avctx,
 
         if (pic->type == PICTURE_TYPE_P) {
             int need_rplm = 0;
-            for (i = 0; i < pic->nb_refs; i++) {
-                av_assert0(pic->refs[i]);
-                if (pic->refs[i] != def_l0[i])
+            for (i = 0; i < pic->nb_refs[0]; i++) {
+                av_assert0(pic->refs[0][i]);
+                if (pic->refs[0][i] != def_l0[i])
                     need_rplm = 1;
             }
 
             sh->ref_pic_list_modification_flag_l0 = need_rplm;
             if (need_rplm) {
                 int pic_num = hpic->frame_num;
-                for (i = 0; i < pic->nb_refs; i++) {
-                    href = pic->refs[i]->priv_data;
+                for (i = 0; i < pic->nb_refs[0]; i++) {
+                    href = pic->refs[0][i]->priv_data;
                     av_assert0(href->frame_num != pic_num);
                     if (href->frame_num < pic_num) {
                         sh->rplm_l0[i].modification_of_pic_nums_idc = 0;
@@ -977,28 +978,29 @@ static int vaapi_encode_h264_init_slice_params(AVCodecContext *avctx,
         } else {
             int need_rplm_l0 = 0, need_rplm_l1 = 0;
             int n0 = 0, n1 = 0;
-            for (i = 0; i < pic->nb_refs; i++) {
-                av_assert0(pic->refs[i]);
-                href = pic->refs[i]->priv_data;
-                av_assert0(href->pic_order_cnt != hpic->pic_order_cnt);
-                if (href->pic_order_cnt < hpic->pic_order_cnt) {
-                    if (pic->refs[i] != def_l0[n0])
-                        need_rplm_l0 = 1;
-                    ++n0;
-                } else {
-                    if (pic->refs[i] != def_l1[n1])
-                        need_rplm_l1 = 1;
-                    ++n1;
-                }
+            for (i = 0; i < pic->nb_refs[0]; i++) {
+                av_assert0(pic->refs[0][i]);
+                href = pic->refs[0][i]->priv_data;
+                av_assert0(href->pic_order_cnt < hpic->pic_order_cnt);
+                if (pic->refs[0][i] != def_l0[n0])
+                    need_rplm_l0 = 1;
+                ++n0;
+            }
+
+            for (i = 0; i < pic->nb_refs[1]; i++) {
+                av_assert0(pic->refs[1][i]);
+                href = pic->refs[1][i]->priv_data;
+                av_assert0(href->pic_order_cnt > hpic->pic_order_cnt);
+                if (pic->refs[1][i] != def_l1[n1])
+                    need_rplm_l1 = 1;
+                ++n1;
             }
 
             sh->ref_pic_list_modification_flag_l0 = need_rplm_l0;
             if (need_rplm_l0) {
                 int pic_num = hpic->frame_num;
-                for (i = j = 0; i < pic->nb_refs; i++) {
-                    href = pic->refs[i]->priv_data;
-                    if (href->pic_order_cnt > hpic->pic_order_cnt)
-                        continue;
+                for (i = j = 0; i < pic->nb_refs[0]; i++) {
+                    href = pic->refs[0][i]->priv_data;
                     av_assert0(href->frame_num != pic_num);
                     if (href->frame_num < pic_num) {
                         sh->rplm_l0[j].modification_of_pic_nums_idc = 0;
@@ -1019,10 +1021,8 @@ static int vaapi_encode_h264_init_slice_params(AVCodecContext *avctx,
             sh->ref_pic_list_modification_flag_l1 = need_rplm_l1;
             if (need_rplm_l1) {
                 int pic_num = hpic->frame_num;
-                for (i = j = 0; i < pic->nb_refs; i++) {
-                    href = pic->refs[i]->priv_data;
-                    if (href->pic_order_cnt < hpic->pic_order_cnt)
-                        continue;
+                for (i = j = 0; i < pic->nb_refs[1]; i++) {
+                    href = pic->refs[1][i]->priv_data;
                     av_assert0(href->frame_num != pic_num);
                     if (href->frame_num < pic_num) {
                         sh->rplm_l1[j].modification_of_pic_nums_idc = 0;
@@ -1062,14 +1062,13 @@ static int vaapi_encode_h264_init_slice_params(AVCodecContext *avctx,
         vslice->RefPicList1[i].flags      = VA_PICTURE_H264_INVALID;
     }
 
-    av_assert0(pic->nb_refs <= 2);
-    if (pic->nb_refs >= 1) {
+    if (pic->nb_refs[0]) {
         // Backward reference for P- or B-frame.
         av_assert0(pic->type == PICTURE_TYPE_P ||
                    pic->type == PICTURE_TYPE_B);
         vslice->RefPicList0[0] = vpic->ReferenceFrames[0];
     }
-    if (pic->nb_refs >= 2) {
+    if (pic->nb_refs[1]) {
         // Forward reference for B-frame.
         av_assert0(pic->type == PICTURE_TYPE_B);
         vslice->RefPicList1[0] = vpic->ReferenceFrames[1];
@@ -1285,11 +1284,11 @@ static const AVOption vaapi_encode_h264_options[] = {
     { "quality", "Set encode quality (trades off against speed, higher is faster)",
       OFFSET(quality), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, INT_MAX, FLAGS },
     { "coder", "Entropy coder type",
-      OFFSET(coder), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, FLAGS, "coder" },
-        { "cavlc", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, FLAGS, "coder" },
-        { "cabac", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, FLAGS, "coder" },
-        { "vlc",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, FLAGS, "coder" },
-        { "ac",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, FLAGS, "coder" },
+      OFFSET(coder), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, FLAGS, .unit = "coder" },
+        { "cavlc", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, FLAGS, .unit = "coder" },
+        { "cabac", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, FLAGS, .unit = "coder" },
+        { "vlc",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, FLAGS, .unit = "coder" },
+        { "ac",    NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, FLAGS, .unit = "coder" },
 
     { "aud", "Include AUD",
       OFFSET(aud), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
@@ -1297,26 +1296,26 @@ static const AVOption vaapi_encode_h264_options[] = {
     { "sei", "Set SEI to include",
       OFFSET(sei), AV_OPT_TYPE_FLAGS,
       { .i64 = SEI_IDENTIFIER | SEI_TIMING | SEI_RECOVERY_POINT | SEI_A53_CC },
-      0, INT_MAX, FLAGS, "sei" },
+      0, INT_MAX, FLAGS, .unit = "sei" },
     { "identifier", "Include encoder version identifier",
       0, AV_OPT_TYPE_CONST, { .i64 = SEI_IDENTIFIER },
-      INT_MIN, INT_MAX, FLAGS, "sei" },
+      INT_MIN, INT_MAX, FLAGS, .unit = "sei" },
     { "timing", "Include timing parameters (buffering_period and pic_timing)",
       0, AV_OPT_TYPE_CONST, { .i64 = SEI_TIMING },
-      INT_MIN, INT_MAX, FLAGS, "sei" },
+      INT_MIN, INT_MAX, FLAGS, .unit = "sei" },
     { "recovery_point", "Include recovery points where appropriate",
       0, AV_OPT_TYPE_CONST, { .i64 = SEI_RECOVERY_POINT },
-      INT_MIN, INT_MAX, FLAGS, "sei" },
+      INT_MIN, INT_MAX, FLAGS, .unit = "sei" },
     { "a53_cc", "Include A/53 caption data",
       0, AV_OPT_TYPE_CONST, { .i64 = SEI_A53_CC },
-      INT_MIN, INT_MAX, FLAGS, "sei" },
+      INT_MIN, INT_MAX, FLAGS, .unit = "sei" },
 
     { "profile", "Set profile (profile_idc and constraint_set*_flag)",
       OFFSET(profile), AV_OPT_TYPE_INT,
-      { .i64 = AV_PROFILE_UNKNOWN }, AV_PROFILE_UNKNOWN, 0xffff, FLAGS, "profile" },
+      { .i64 = AV_PROFILE_UNKNOWN }, AV_PROFILE_UNKNOWN, 0xffff, FLAGS, .unit = "profile" },
 
 #define PROFILE(name, value)  name, NULL, 0, AV_OPT_TYPE_CONST, \
-      { .i64 = value }, 0, 0, FLAGS, "profile"
+      { .i64 = value }, 0, 0, FLAGS, .unit = "profile"
     { PROFILE("constrained_baseline", AV_PROFILE_H264_CONSTRAINED_BASELINE) },
     { PROFILE("main",                 AV_PROFILE_H264_MAIN) },
     { PROFILE("high",                 AV_PROFILE_H264_HIGH) },
@@ -1325,10 +1324,10 @@ static const AVOption vaapi_encode_h264_options[] = {
 
     { "level", "Set level (level_idc)",
       OFFSET(level), AV_OPT_TYPE_INT,
-      { .i64 = AV_LEVEL_UNKNOWN }, AV_LEVEL_UNKNOWN, 0xff, FLAGS, "level" },
+      { .i64 = AV_LEVEL_UNKNOWN }, AV_LEVEL_UNKNOWN, 0xff, FLAGS, .unit = "level" },
 
 #define LEVEL(name, value) name, NULL, 0, AV_OPT_TYPE_CONST, \
-      { .i64 = value }, 0, 0, FLAGS, "level"
+      { .i64 = value }, 0, 0, FLAGS, .unit = "level"
     { LEVEL("1",   10) },
     { LEVEL("1.1", 11) },
     { LEVEL("1.2", 12) },

@@ -20,14 +20,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/buffer.h"
 #include "libavutil/channel_layout.h"
+#include "libavutil/mem.h"
 
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
 #include "bytestream.h"
 #include "codec_internal.h"
 #include "get_bits.h"
+#include "refstruct.h"
 #include "thread.h"
 #include "threadframe.h"
 #include "unary.h"
@@ -110,8 +111,7 @@ typedef struct WavpackContext {
     ThreadFrame curr_frame, prev_frame;
     Modulation modulation;
 
-    AVBufferRef *dsd_ref;
-    DSDContext *dsdctx;
+    DSDContext *dsdctx; ///< RefStruct reference
     int dsd_channels;
 } WavpackContext;
 
@@ -973,9 +973,11 @@ static inline int wv_unpack_mono(WavpackFrameContext *s, GetBitContext *gb,
 
 static av_cold int wv_alloc_frame_context(WavpackContext *c)
 {
-    c->fdec = av_realloc_f(c->fdec, c->fdec_num + 1, sizeof(*c->fdec));
-    if (!c->fdec)
+    WavpackFrameContext **fdec = av_realloc_array(c->fdec, c->fdec_num + 1, sizeof(*c->fdec));
+
+    if (!fdec)
         return -1;
+    c->fdec = fdec;
 
     c->fdec[c->fdec_num] = av_mallocz(sizeof(**c->fdec));
     if (!c->fdec[c->fdec_num])
@@ -990,9 +992,8 @@ static int wv_dsd_reset(WavpackContext *s, int channels)
 {
     int i;
 
-    s->dsdctx = NULL;
     s->dsd_channels = 0;
-    av_buffer_unref(&s->dsd_ref);
+    ff_refstruct_unref(&s->dsdctx);
 
     if (!channels)
         return 0;
@@ -1000,10 +1001,9 @@ static int wv_dsd_reset(WavpackContext *s, int channels)
     if (channels > INT_MAX / sizeof(*s->dsdctx))
         return AVERROR(EINVAL);
 
-    s->dsd_ref = av_buffer_allocz(channels * sizeof(*s->dsdctx));
-    if (!s->dsd_ref)
+    s->dsdctx = ff_refstruct_allocz(channels * sizeof(*s->dsdctx));
+    if (!s->dsdctx)
         return AVERROR(ENOMEM);
-    s->dsdctx = (DSDContext*)s->dsd_ref->data;
     s->dsd_channels = channels;
 
     for (i = 0; i < channels; i++)
@@ -1022,21 +1022,14 @@ static int update_thread_context(AVCodecContext *dst, const AVCodecContext *src)
     if (dst == src)
         return 0;
 
-    ff_thread_release_ext_buffer(dst, &fdst->curr_frame);
+    ff_thread_release_ext_buffer(&fdst->curr_frame);
     if (fsrc->curr_frame.f->data[0]) {
         if ((ret = ff_thread_ref_frame(&fdst->curr_frame, &fsrc->curr_frame)) < 0)
             return ret;
     }
 
-    fdst->dsdctx = NULL;
-    fdst->dsd_channels = 0;
-    ret = av_buffer_replace(&fdst->dsd_ref, fsrc->dsd_ref);
-    if (ret < 0)
-        return ret;
-    if (fsrc->dsd_ref) {
-        fdst->dsdctx = (DSDContext*)fdst->dsd_ref->data;
-        fdst->dsd_channels = fsrc->dsd_channels;
-    }
+    ff_refstruct_replace(&fdst->dsdctx, fsrc->dsdctx);
+    fdst->dsd_channels = fsrc->dsd_channels;
 
     return 0;
 }
@@ -1056,8 +1049,6 @@ static av_cold int wavpack_decode_init(AVCodecContext *avctx)
     if (!s->curr_frame.f || !s->prev_frame.f)
         return AVERROR(ENOMEM);
 
-    ff_init_dsd_data();
-
     return 0;
 }
 
@@ -1070,13 +1061,13 @@ static av_cold int wavpack_decode_end(AVCodecContext *avctx)
     av_freep(&s->fdec);
     s->fdec_num = 0;
 
-    ff_thread_release_ext_buffer(avctx, &s->curr_frame);
+    ff_thread_release_ext_buffer(&s->curr_frame);
     av_frame_free(&s->curr_frame.f);
 
-    ff_thread_release_ext_buffer(avctx, &s->prev_frame);
+    ff_thread_release_ext_buffer(&s->prev_frame);
     av_frame_free(&s->prev_frame.f);
 
-    av_buffer_unref(&s->dsd_ref);
+    ff_refstruct_unref(&s->dsdctx);
 
     return 0;
 }
@@ -1104,11 +1095,6 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
     }
 
     s = wc->fdec[block_no];
-    if (!s) {
-        av_log(avctx, AV_LOG_ERROR, "Context for block %d is not present\n",
-               block_no);
-        return AVERROR_INVALIDDATA;
-    }
 
     memset(s->decorr, 0, MAX_TERMS * sizeof(Decorr));
     memset(s->ch, 0, sizeof(s->ch));
@@ -1535,14 +1521,15 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
                 av_log(avctx, AV_LOG_ERROR, "Error reinitializing the DSD context\n");
                 return ret;
             }
-            ff_thread_release_ext_buffer(avctx, &wc->curr_frame);
+            ff_thread_release_ext_buffer(&wc->curr_frame);
+            ff_init_dsd_data();
         }
         av_channel_layout_copy(&avctx->ch_layout, &new_ch_layout);
         avctx->sample_rate         = new_samplerate;
         avctx->sample_fmt          = sample_fmt;
         avctx->bits_per_raw_sample = orig_bpp;
 
-        ff_thread_release_ext_buffer(avctx, &wc->prev_frame);
+        ff_thread_release_ext_buffer(&wc->prev_frame);
         FFSWAP(ThreadFrame, wc->curr_frame, wc->prev_frame);
 
         /* get output buffer */
@@ -1673,7 +1660,7 @@ static int wavpack_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
     }
 
     ff_thread_await_progress(&s->prev_frame, INT_MAX, 0);
-    ff_thread_release_ext_buffer(avctx, &s->prev_frame);
+    ff_thread_release_ext_buffer(&s->prev_frame);
 
     if (s->modulation == MODULATION_DSD)
         avctx->execute2(avctx, dsd_channel, s->frame, NULL, avctx->ch_layout.nb_channels);
@@ -1690,7 +1677,7 @@ static int wavpack_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
 error:
     if (s->frame) {
         ff_thread_await_progress(&s->prev_frame, INT_MAX, 0);
-        ff_thread_release_ext_buffer(avctx, &s->prev_frame);
+        ff_thread_release_ext_buffer(&s->prev_frame);
         ff_thread_report_progress(&s->curr_frame, INT_MAX, 0);
     }
 

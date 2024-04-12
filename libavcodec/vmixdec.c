@@ -24,11 +24,11 @@
 #include <string.h>
 
 #include "libavutil/intreadwrite.h"
+#include "libavutil/mem.h"
 #include "libavutil/mem_internal.h"
 
 #include "avcodec.h"
 #include "codec_internal.h"
-#include "decode.h"
 #define CACHED_BITSTREAM_READER !ARCH_X86_32
 #include "golomb.h"
 #include "get_bits.h"
@@ -55,22 +55,17 @@ typedef struct VMIXContext {
     IDCTDSPContext idsp;
 } VMIXContext;
 
-static const uint8_t quality[256] = {
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1, 64, 56, 52, 48, 44,
-    12, 36, 32, 28, 24, 22, 20, 18, 16, 14, 12, 10,  8,  7,  6,  5,
-     4,  3,  2,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
-     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+static const uint8_t quality[] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1,64,63,62,61,
+   60,59,58,57,56,55,54,53,52,51,
+   50,49,48,47,46,45,44,43,42,41,
+   40,39,38,37,36,35,34,33,32,31,
+   30,29,28,27,26,25,24,23,22,21,
+   20,19,18,17,16,15,14,13,12,11,
+   10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
 };
 
 static const uint8_t quant[64] = {
@@ -153,7 +148,7 @@ static int decode_dcac(AVCodecContext *avctx,
                     ac_run = get_ue_golomb_long(ac_gb);
             }
 
-            block[0] = (dc << lshift) + add;
+            block[0] = ((unsigned)dc << lshift) + (unsigned)add;
             s->idsp.idct_put(dst + x, linesize, block);
         }
 
@@ -240,7 +235,10 @@ static int decode_frame(AVCodecContext *avctx,
     else if (offset != 3)
         return AVERROR_INVALIDDATA;
 
-    q = quality[avpkt->data[offset - 2]];
+    if (s->lshift > 31)
+        return AVERROR_INVALIDDATA;
+
+    q = quality[FFMIN(avpkt->data[offset - 2], FF_ARRAY_ELEMS(quality)-1)];
     for (int n = 0; n < 64; n++)
         s->factors[n] = quant[n] * q;
 

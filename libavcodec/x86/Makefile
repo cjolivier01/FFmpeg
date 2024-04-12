@@ -5,11 +5,9 @@ OBJS-$(CONFIG_AC3DSP)                  += x86/ac3dsp_init.o
 OBJS-$(CONFIG_AUDIODSP)                += x86/audiodsp_init.o
 OBJS-$(CONFIG_BLOCKDSP)                += x86/blockdsp_init.o
 OBJS-$(CONFIG_BSWAPDSP)                += x86/bswapdsp_init.o
-OBJS-$(CONFIG_DCT)                     += x86/dct_init.o
 OBJS-$(CONFIG_DIRAC_DECODER)           += x86/diracdsp_init.o           \
                                           x86/dirac_dwt_init.o
 OBJS-$(CONFIG_FDCTDSP)                 += x86/fdctdsp_init.o
-OBJS-$(CONFIG_FFT)                     += x86/fft_init.o
 OBJS-$(CONFIG_FMTCONVERT)              += x86/fmtconvert_init.o
 OBJS-$(CONFIG_H263DSP)                 += x86/h263dsp_init.o
 OBJS-$(CONFIG_H264CHROMA)              += x86/h264chroma_init.o
@@ -56,7 +54,7 @@ OBJS-$(CONFIG_FLAC_DECODER)            += x86/flacdsp_init.o
 OBJS-$(CONFIG_FLAC_ENCODER)            += x86/flacencdsp_init.o
 OBJS-$(CONFIG_OPUS_DECODER)            += x86/opusdsp_init.o
 OBJS-$(CONFIG_OPUS_ENCODER)            += x86/celt_pvq_init.o
-OBJS-$(CONFIG_HEVC_DECODER)            += x86/hevcdsp_init.o
+OBJS-$(CONFIG_HEVC_DECODER)            += x86/hevcdsp_init.o x86/h26x/h2656dsp.o
 OBJS-$(CONFIG_JPEG2000_DECODER)        += x86/jpeg2000dsp_init.o
 OBJS-$(CONFIG_LSCR_DECODER)            += x86/pngdsp_init.o
 OBJS-$(CONFIG_MLP_DECODER)             += x86/mlpdsp_init.o
@@ -98,8 +96,6 @@ X86ASM-OBJS-$(CONFIG_AC3DSP)           += x86/ac3dsp.o                  \
 X86ASM-OBJS-$(CONFIG_AUDIODSP)         += x86/audiodsp.o
 X86ASM-OBJS-$(CONFIG_BLOCKDSP)         += x86/blockdsp.o
 X86ASM-OBJS-$(CONFIG_BSWAPDSP)         += x86/bswapdsp.o
-X86ASM-OBJS-$(CONFIG_DCT)              += x86/dct32.o
-X86ASM-OBJS-$(CONFIG_FFT)              += x86/fft.o
 X86ASM-OBJS-$(CONFIG_FMTCONVERT)       += x86/fmtconvert.o
 X86ASM-OBJS-$(CONFIG_H263DSP)          += x86/h263_loopfilter.o
 X86ASM-OBJS-$(CONFIG_H264CHROMA)       += x86/h264_chromamc.o           \
@@ -126,7 +122,7 @@ X86ASM-OBJS-$(CONFIG_LLVIDDSP)         += x86/lossless_videodsp.o
 X86ASM-OBJS-$(CONFIG_LLVIDENCDSP)      += x86/lossless_videoencdsp.o
 X86ASM-OBJS-$(CONFIG_LPC)              += x86/lpc.o
 X86ASM-OBJS-$(CONFIG_ME_CMP)           += x86/me_cmp.o
-X86ASM-OBJS-$(CONFIG_MPEGAUDIODSP)     += x86/imdct36.o
+X86ASM-OBJS-$(CONFIG_MPEGAUDIODSP)     += x86/dct32.o x86/imdct36.o
 X86ASM-OBJS-$(CONFIG_MPEGVIDEOENC)     += x86/mpegvideoencdsp.o
 X86ASM-OBJS-$(CONFIG_OPUS_DECODER)     += x86/opusdsp.o
 X86ASM-OBJS-$(CONFIG_OPUS_ENCODER)     += x86/celt_pvq_search.o
@@ -171,6 +167,7 @@ X86ASM-OBJS-$(CONFIG_HEVC_DECODER)     += x86/hevc_add_res.o            \
                                           x86/hevc_deblock.o            \
                                           x86/hevc_idct.o               \
                                           x86/hevc_mc.o                 \
+                                          x86/h26x/h2656_inter.o        \
                                           x86/hevc_sao.o                \
                                           x86/hevc_sao_10bit.o
 X86ASM-OBJS-$(CONFIG_JPEG2000_DECODER) += x86/jpeg2000dsp.o

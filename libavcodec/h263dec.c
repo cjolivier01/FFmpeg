@@ -42,12 +42,28 @@
 #include "mpeg4video.h"
 #include "mpeg4videodec.h"
 #include "mpeg4videodefs.h"
-#include "mpegutils.h"
 #include "mpegvideo.h"
 #include "mpegvideodec.h"
 #include "msmpeg4dec.h"
 #include "thread.h"
 #include "wmv2dec.h"
+
+static const enum AVPixelFormat h263_hwaccel_pixfmt_list_420[] = {
+#if CONFIG_H263_VAAPI_HWACCEL || CONFIG_MPEG4_VAAPI_HWACCEL
+    AV_PIX_FMT_VAAPI,
+#endif
+#if CONFIG_MPEG4_NVDEC_HWACCEL
+    AV_PIX_FMT_CUDA,
+#endif
+#if CONFIG_MPEG4_VDPAU_HWACCEL
+    AV_PIX_FMT_VDPAU,
+#endif
+#if CONFIG_H263_VIDEOTOOLBOX_HWACCEL || CONFIG_MPEG4_VIDEOTOOLBOX_HWACCEL
+    AV_PIX_FMT_VIDEOTOOLBOX,
+#endif
+    AV_PIX_FMT_YUV420P,
+    AV_PIX_FMT_NONE
+};
 
 static enum AVPixelFormat h263_get_format(AVCodecContext *avctx)
 {
@@ -63,7 +79,12 @@ static enum AVPixelFormat h263_get_format(AVCodecContext *avctx)
         return AV_PIX_FMT_GRAY8;
     }
 
-    return avctx->pix_fmt = ff_get_format(avctx, avctx->codec->pix_fmts);
+    if (avctx->codec_id == AV_CODEC_ID_H263  ||
+        avctx->codec_id == AV_CODEC_ID_H263P ||
+        avctx->codec_id == AV_CODEC_ID_MPEG4)
+        return avctx->pix_fmt = ff_get_format(avctx, h263_hwaccel_pixfmt_list_420);
+
+    return AV_PIX_FMT_YUV420P;
 }
 
 av_cold int ff_h263_decode_init(AVCodecContext *avctx)
@@ -128,7 +149,6 @@ av_cold int ff_h263_decode_init(AVCodecContext *avctx)
         avctx->codec->id != AV_CODEC_ID_H263P &&
         avctx->codec->id != AV_CODEC_ID_MPEG4) {
         avctx->pix_fmt = h263_get_format(avctx);
-        ff_mpv_idct_init(s);
         if ((ret = ff_mpv_common_init(s)) < 0)
             return ret;
     }
@@ -459,23 +479,12 @@ retry:
     if (ret < 0)
         return ret;
 
-    if (!s->context_initialized)
-        // we need the idct permutation for reading a custom matrix
-        ff_mpv_idct_init(s);
-
     /* let's go :-) */
     if (CONFIG_WMV2_DECODER && s->msmpeg4_version == 5) {
         ret = ff_wmv2_decode_picture_header(s);
     } else if (CONFIG_MSMPEG4DEC && s->msmpeg4_version) {
         ret = ff_msmpeg4_decode_picture_header(s);
     } else if (CONFIG_MPEG4_DECODER && avctx->codec_id == AV_CODEC_ID_MPEG4) {
-        if (s->avctx->extradata_size && !s->extradata_parsed) {
-            GetBitContext gb;
-
-            if (init_get_bits8(&gb, s->avctx->extradata, s->avctx->extradata_size) >= 0 )
-                ff_mpeg4_decode_picture_header(avctx->priv_data, &gb, 1, 0);
-            s->extradata_parsed = 1;
-        }
         ret = ff_mpeg4_decode_picture_header(avctx->priv_data, &s->gb, 0, 0);
         s->skipped_last_frame = (ret == FRAME_SKIPPED);
     } else if (CONFIG_H263I_DECODER && s->codec_id == AV_CODEC_ID_H263I) {
@@ -622,7 +631,7 @@ retry:
     av_assert1(s->bitstream_buffer_size == 0);
 frame_end:
     if (!s->studio_profile)
-        ff_er_frame_end(&s->er);
+        ff_er_frame_end(&s->er, NULL);
 
     if (avctx->hwaccel) {
         ret = FF_HW_SIMPLE_CALL(avctx, end_frame);
@@ -671,23 +680,6 @@ frame_end:
         return get_consumed_bytes(s, buf_size);
 }
 
-const enum AVPixelFormat ff_h263_hwaccel_pixfmt_list_420[] = {
-#if CONFIG_H263_VAAPI_HWACCEL || CONFIG_MPEG4_VAAPI_HWACCEL
-    AV_PIX_FMT_VAAPI,
-#endif
-#if CONFIG_MPEG4_NVDEC_HWACCEL
-    AV_PIX_FMT_CUDA,
-#endif
-#if CONFIG_MPEG4_VDPAU_HWACCEL
-    AV_PIX_FMT_VDPAU,
-#endif
-#if CONFIG_H263_VIDEOTOOLBOX_HWACCEL || CONFIG_MPEG4_VIDEOTOOLBOX_HWACCEL
-    AV_PIX_FMT_VIDEOTOOLBOX,
-#endif
-    AV_PIX_FMT_YUV420P,
-    AV_PIX_FMT_NONE
-};
-
 static const AVCodecHWConfigInternal *const h263_hw_config_list[] = {
 #if CONFIG_H263_VAAPI_HWACCEL
     HWACCEL_VAAPI(h263),
@@ -718,7 +710,6 @@ const FFCodec ff_h263_decoder = {
     .caps_internal  = FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM,
     .flush          = ff_mpeg_flush,
     .p.max_lowres   = 3,
-    .p.pix_fmts     = ff_h263_hwaccel_pixfmt_list_420,
     .hw_configs     = h263_hw_config_list,
 };
 
@@ -736,6 +727,5 @@ const FFCodec ff_h263p_decoder = {
     .caps_internal  = FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM,
     .flush          = ff_mpeg_flush,
     .p.max_lowres   = 3,
-    .p.pix_fmts     = ff_h263_hwaccel_pixfmt_list_420,
     .hw_configs     = h263_hw_config_list,
 };
