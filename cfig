@@ -1,6 +1,6 @@
 #!/bin/bash
 
-prefix=/usr/local/
+prefix="${CONDA_PREFIX}"
 ccap1=75
 
 NVCCFLAGS="-gencode arch=compute_60,code=sm_60 -gencode arch=compute_61,code=sm_61 -gencode arch=compute_75,code=sm_75" \
