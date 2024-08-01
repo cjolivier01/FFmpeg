@@ -2,9 +2,9 @@
 
 prefix="${CONDA_PREFIX}"
 #prefix="/usr/local"
-ccap1=75
+ccap1=89
 
-NVCCFLAGS="-gencode arch=compute_60,code=sm_60 -gencode arch=compute_61,code=sm_61 -gencode arch=compute_75,code=sm_75" \
+NVCCFLAGS="-gencode arch=compute_60,code=sm_60 -gencode arch=compute_61,code=sm_61 -gencode arch=compute_75,code=sm_75 -gencode arch=compute_89,code=sm_89" \
   ./configure \
   --prefix="${prefix}" \
   --extra-cflags='-I/usr/local/cuda/include' \
