@@ -2,14 +2,11 @@
 
 prefix="${CONDA_PREFIX}"
 #prefix="/usr/local"
-ccap1=89
 
-NVCCFLAGS="-gencode arch=compute_60,code=sm_60 -gencode arch=compute_61,code=sm_61 -gencode arch=compute_75,code=sm_75 -gencode arch=compute_89,code=sm_89" \
-  ./configure \
+./configure \
   --prefix="${prefix}" \
   --extra-cflags='-I/usr/local/cuda/include' \
   --extra-ldflags='-L/usr/local/cuda/lib64' \
-  --nvccflags="-gencode arch=compute_${ccap1},code=sm_${ccap1} -O2" \
   --disable-doc \
   --enable-decoder=aac \
   --enable-decoder=h264 \
