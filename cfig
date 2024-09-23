@@ -1,13 +1,11 @@
 #!/bin/bash
 
 prefix=/usr/local/
-ccap=75
 
 ./configure \
   --prefix="${prefix}" \
   --extra-cflags='-I/usr/local/cuda/include' \
   --extra-ldflags='-L/usr/local/cuda/lib64' \
-  --nvccflags="-gencode arch=compute_${ccap},code=sm_${ccap} -O2" \
   --disable-doc \
   --enable-decoder=aac \
   --enable-decoder=h264 \
