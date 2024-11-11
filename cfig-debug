@@ -1,2 +1,2 @@
 #!/bin/bash
-./cfig --enable-debug --disable-stripping $@
+./cfig --enable-debug --disable-stripping --optflags=-O0 $@
