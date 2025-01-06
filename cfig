@@ -33,6 +33,11 @@ prefix=/usr/local/
   --enable-cuvid \
   --enable-nvdec \
   --enable-pic \
-  --enable-rpath $@
+  --enable-rpath \
+  --enable-libfontconfig \
+  --enable-libfreetype \
+  --enable-libfribidi \
+  --enable-libharfbuzz \
+  $@
 
 
