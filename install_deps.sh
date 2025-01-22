@@ -1,5 +1,6 @@
 #!/bin/bash
 sudo apt-get install -y \
+  nasm \
   gnutls-dev \
   libharfbuzz-dev \
   libfribidi-dev \
