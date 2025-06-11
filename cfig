@@ -41,7 +41,7 @@ prefix=/usr/local/
   --enable-libvidstab \
   --enable-rkmpp \
   --enable-vulkan \
-  --enable-version-3 \
+  --enable-version3 \
   $@
 
 
