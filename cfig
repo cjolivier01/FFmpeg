@@ -39,9 +39,7 @@ prefix=/usr/local/
   --enable-libfribidi \
   --enable-libharfbuzz \
   --enable-libvidstab \
-  --enable-rkmpp \
   --enable-vulkan \
-  --enable-version3 \
   $@
 
 
