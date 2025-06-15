@@ -3,6 +3,7 @@ sudo apt-get install -y \
   nasm \
   gnutls-dev \
   libharfbuzz-dev \
+  libvidstab-dev \
   libfribidi-dev \
   libfreetype-dev \
   libfontconfig-dev \
