@@ -38,8 +38,7 @@ prefix=/usr/local/
   --enable-libfreetype \
   --enable-libfribidi \
   --enable-libharfbuzz \
-  --enable-libvidstab \
-  --enable-vulkan \
+  --enable-libvidstab
   $@
 
 
