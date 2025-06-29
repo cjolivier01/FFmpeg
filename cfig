@@ -44,6 +44,7 @@ ${SCRIPT_DIR}/configure \
   --enable-amf \
   --enable-encoder=hevc_amf \
   --enable-decoder=hevc_amf \
+  --enable-vaapi \
   $@
 
 
