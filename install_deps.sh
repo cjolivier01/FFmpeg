@@ -9,5 +9,6 @@ sudo apt-get install -y \
   libfontconfig-dev \
   libflac-dev \
   libx264-dev \
-  libx265-dev
+  libx265-dev \
+  libvidstab-dev
 
