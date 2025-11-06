@@ -2,7 +2,9 @@
 
 prefix=/usr/local/
 
-./configure \
+SCRIPT_DIR=$(dirname $0)
+
+${SCRIPT_DIR}/configure \
   --prefix="${prefix}" \
   --extra-cflags='-I/usr/local/cuda/include' \
   --extra-ldflags='-L/usr/local/cuda/lib64' \
@@ -38,7 +40,10 @@ prefix=/usr/local/
   --enable-libfreetype \
   --enable-libfribidi \
   --enable-libharfbuzz \
-  --enable-libvidstab
+  --enable-libvidstab \
+  --enable-amf \
+  --enable-encoder=hevc_amf \
+  --enable-decoder=hevc_amf \
   $@
 
 
