@@ -4544,7 +4544,7 @@ set_default nvcc
 
 if enabled cuda_nvcc; then
     if $nvcc $nvccflags_default 2>&1 | grep -qi unsupported; then
-        nvccflags_default="-gencode arch=compute_60,code=sm_60 -O2"
+        nvccflags_default="-gencode arch=compute_89,code=sm_89 -O2"
     fi
 fi
 
