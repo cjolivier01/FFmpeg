@@ -5,7 +5,7 @@ prefix=/usr/local/
 SCRIPT_DIR=$(dirname $0)
 
 AMF_ARGS=""
-if [ -f $(which rocm-smi) ]; then
+if [ ! -z "$(which rocm-smi)" ]; then
   AMF_ARGS="--enable-amf --enable-encoder=hevc_amf --enable-decoder=hevc_amf"
 fi
 
