@@ -21,7 +21,6 @@
  * scale video filter
  */
 
-#include <nppi.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -40,7 +39,62 @@
 #include "scale_eval.h"
 #include "video.h"
 
+#include <npp.h>
+
 #define CHECK_CU(x) FF_CUDA_CHECK_DL(ctx, device_hwctx->internal->cuda_dl, x)
+
+#if NPP_VERSION_MAJOR >= 12
+static int init_npp_stream_context(AVFilterContext *ctx, AVFrame *frame,
+                                   NppStreamContext *npp_ctx)
+{
+    AVHWFramesContext *frames_ctx;
+    AVHWDeviceContext *device_ctx;
+    AVCUDADeviceContext *hwctx;
+    CudaFunctions *cu;
+    int ret;
+
+    if (!frame->hw_frames_ctx) {
+        av_log(ctx, AV_LOG_ERROR, "No hw_frames_ctx available for NPP operation.\n");
+        return AVERROR(EINVAL);
+    }
+
+    frames_ctx = (AVHWFramesContext *)frame->hw_frames_ctx->data;
+    device_ctx = frames_ctx->device_ctx;
+    hwctx      = device_ctx->hwctx;
+    cu         = hwctx->internal->cuda_dl;
+
+    memset(npp_ctx, 0, sizeof(*npp_ctx));
+
+    npp_ctx->hStream   = (cudaStream_t)hwctx->stream;
+    npp_ctx->nCudaDeviceId = hwctx->internal->cuda_device;
+
+    ret = FF_CUDA_CHECK_DL(ctx, cu,
+                           cu->cuDeviceGetAttribute(&npp_ctx->nMultiProcessorCount,
+                                                    CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,
+                                                    hwctx->internal->cuda_device));
+    if (ret < 0)
+        return ret;
+
+    ret = FF_CUDA_CHECK_DL(ctx, cu,
+                           cu->cuDeviceGetAttribute(&npp_ctx->nCudaDevAttrComputeCapabilityMajor,
+                                                    CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+                                                    hwctx->internal->cuda_device));
+    if (ret < 0)
+        return ret;
+
+    ret = FF_CUDA_CHECK_DL(ctx, cu,
+                           cu->cuDeviceGetAttribute(&npp_ctx->nCudaDevAttrComputeCapabilityMinor,
+                                                    CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+                                                    hwctx->internal->cuda_device));
+    if (ret < 0)
+        return ret;
+
+    npp_ctx->nStreamFlags = 0;
+    npp_ctx->nReserved0   = 0;
+
+    return 0;
+}
+#endif
 
 static const enum AVPixelFormat supported_formats[] = {
     AV_PIX_FMT_YUV420P,
@@ -705,12 +759,28 @@ static int nppscale_deinterleave(AVFilterContext *ctx, NPPScaleStageContext *sta
     AVHWFramesContext *in_frames_ctx = (AVHWFramesContext*)in->hw_frames_ctx->data;
     NppStatus err;
 
+#if NPP_VERSION_MAJOR >= 12
+    NppStreamContext npp_ctx;
+    {
+        int ret = init_npp_stream_context(ctx, out, &npp_ctx);
+        if (ret < 0)
+            return ret;
+    }
+#endif
+
     switch (in_frames_ctx->sw_format) {
     case AV_PIX_FMT_NV12:
+#if NPP_VERSION_MAJOR >= 12
+        err = nppiYCbCr420_8u_P2P3R_Ctx(in->data[0], in->linesize[0],
+                                        in->data[1], in->linesize[1],
+                                        out->data, out->linesize,
+                                        (NppiSize){ in->width, in->height }, npp_ctx);
+#else
         err = nppiYCbCr420_8u_P2P3R(in->data[0], in->linesize[0],
                                     in->data[1], in->linesize[1],
                                     out->data, out->linesize,
                                     (NppiSize){ in->width, in->height });
+#endif
         break;
     default:
         return AVERROR_BUG;
@@ -730,18 +800,34 @@ static int nppscale_resize(AVFilterContext *ctx, NPPScaleStageContext *stage,
     NppStatus err;
     int i;
 
+#if NPP_VERSION_MAJOR >= 12
+    NppStreamContext npp_ctx;
+    int ret = init_npp_stream_context(ctx, out, &npp_ctx);
+    if (ret < 0)
+        return ret;
+#endif
+
     for (i = 0; i < FF_ARRAY_ELEMS(stage->planes_in) && i < FF_ARRAY_ELEMS(in->data) && in->data[i]; i++) {
         int iw = stage->planes_in[i].width;
         int ih = stage->planes_in[i].height;
         int ow = stage->planes_out[i].width;
         int oh = stage->planes_out[i].height;
 
+#if NPP_VERSION_MAJOR >= 12
+        err = nppiResizeSqrPixel_8u_C1R_Ctx(in->data[i], (NppiSize){ iw, ih },
+                                            in->linesize[i], (NppiRect){ 0, 0, iw, ih },
+                                            out->data[i], out->linesize[i],
+                                            (NppiRect){ 0, 0, ow, oh },
+                                            (double)ow / iw, (double)oh / ih,
+                                            0.0, 0.0, s->interp_algo, npp_ctx);
+#else
         err = nppiResizeSqrPixel_8u_C1R(in->data[i], (NppiSize){ iw, ih },
                                         in->linesize[i], (NppiRect){ 0, 0, iw, ih },
                                         out->data[i], out->linesize[i],
                                         (NppiRect){ 0, 0, ow, oh },
                                         (double)ow / iw, (double)oh / ih,
                                         0.0, 0.0, s->interp_algo);
+#endif
         if (err != NPP_SUCCESS) {
             av_log(ctx, AV_LOG_ERROR, "NPP resize error: %d\n", err);
             return AVERROR_UNKNOWN;
@@ -757,13 +843,30 @@ static int nppscale_interleave(AVFilterContext *ctx, NPPScaleStageContext *stage
     AVHWFramesContext *out_frames_ctx = (AVHWFramesContext*)out->hw_frames_ctx->data;
     NppStatus err;
 
+#if NPP_VERSION_MAJOR >= 12
+    NppStreamContext npp_ctx;
+    {
+        int ret = init_npp_stream_context(ctx, out, &npp_ctx);
+        if (ret < 0)
+            return ret;
+    }
+#endif
+
     switch (out_frames_ctx->sw_format) {
     case AV_PIX_FMT_NV12:
+#if NPP_VERSION_MAJOR >= 12
+        err = nppiYCbCr420_8u_P3P2R_Ctx((const uint8_t**)in->data,
+                                        in->linesize,
+                                        out->data[0], out->linesize[0],
+                                        out->data[1], out->linesize[1],
+                                        (NppiSize){ in->width, in->height }, npp_ctx);
+#else
         err = nppiYCbCr420_8u_P3P2R((const uint8_t**)in->data,
                                     in->linesize,
                                     out->data[0], out->linesize[0],
                                     out->data[1], out->linesize[1],
                                     (NppiSize){ in->width, in->height });
+#endif
         break;
     default:
         return AVERROR_BUG;

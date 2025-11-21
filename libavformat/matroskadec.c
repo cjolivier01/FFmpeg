@@ -2824,6 +2824,8 @@ static int mka_parse_audio(MatroskaTrack *track, AVStream *st,
     par->sample_rate = track->audio.out_samplerate;
     // channel layout may be already set by codec private checks above
     if (!av_channel_layout_check(&par->ch_layout)) {
+        if (track->audio.channels > INT32_MAX)
+            return AVERROR_PATCHWELCOME;
         par->ch_layout.order = AV_CHANNEL_ORDER_UNSPEC;
         par->ch_layout.nb_channels = track->audio.channels;
     }
@@ -3186,6 +3188,10 @@ static int matroska_parse_tracks(AVFormatContext *s)
                    track->time_scale);
             track->time_scale = 1.0;
         }
+
+        if (matroska->time_scale * track->time_scale > UINT_MAX)
+            return AVERROR_INVALIDDATA;
+
         avpriv_set_pts_info(st, 64, matroska->time_scale * track->time_scale,
                             1000 * 1000 * 1000);    /* 64 bit pts in ns */
 
@@ -4193,7 +4199,7 @@ static int matroska_parse_cluster(MatroskaDemuxContext *matroska)
     MatroskaBlock     *block = &cluster->block;
     int res;
 
-    av_assert0(matroska->num_levels <= 2);
+    av_assert0(matroska->num_levels <= 2U);
 
     if (matroska->num_levels == 1) {
         res = ebml_parse(matroska, matroska_segment, NULL);
@@ -4566,9 +4572,10 @@ static int64_t webm_dash_manifest_compute_bandwidth(AVFormatContext *s, int64_t 
             // The prebuffer ends in the last Cue. Estimate how much data was
             // prebuffered.
             pre_bytes = desc_end.end_offset - desc_end.start_offset;
-            pre_ns = desc_end.end_time_ns - desc_end.start_time_ns;
-            if (pre_ns <= 0)
+            if (desc_end.end_time_ns <= desc_end.start_time_ns ||
+                desc_end.end_time_ns - (uint64_t)desc_end.start_time_ns > INT64_MAX)
                 return -1;
+            pre_ns = desc_end.end_time_ns - desc_end.start_time_ns;
             pre_sec = pre_ns / nano_seconds_per_second;
             prebuffer_bytes +=
                 pre_bytes * ((temp_prebuffer_ns / nano_seconds_per_second) / pre_sec);
@@ -4581,7 +4588,7 @@ static int64_t webm_dash_manifest_compute_bandwidth(AVFormatContext *s, int64_t 
                 int64_t desc_bytes = desc_end.end_offset - desc_beg.start_offset;
                 int64_t desc_ns = desc_end.end_time_ns - desc_beg.start_time_ns;
                 double desc_sec, calc_bits_per_second, percent, mod_bits_per_second;
-                if (desc_bytes <= 0)
+                if (desc_bytes <= 0 || desc_bytes > INT64_MAX/8)
                     return -1;
 
                 desc_sec = desc_ns / nano_seconds_per_second;

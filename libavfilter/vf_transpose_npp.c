@@ -16,7 +16,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <nppi.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -33,7 +32,62 @@
 #include "internal.h"
 #include "video.h"
 
+#include <npp.h>
+
 #define CHECK_CU(x) FF_CUDA_CHECK_DL(ctx, device_hwctx->internal->cuda_dl, x)
+
+#if NPP_VERSION_MAJOR >= 12
+static int init_npp_stream_context(AVFilterContext *ctx, AVFrame *frame,
+                                   NppStreamContext *npp_ctx)
+{
+    AVHWFramesContext *frames_ctx;
+    AVHWDeviceContext *device_ctx;
+    AVCUDADeviceContext *hwctx;
+    CudaFunctions *cu;
+    int ret;
+
+    if (!frame->hw_frames_ctx) {
+        av_log(ctx, AV_LOG_ERROR, "No hw_frames_ctx available for NPP operation.\n");
+        return AVERROR(EINVAL);
+    }
+
+    frames_ctx = (AVHWFramesContext *)frame->hw_frames_ctx->data;
+    device_ctx = frames_ctx->device_ctx;
+    hwctx      = device_ctx->hwctx;
+    cu         = hwctx->internal->cuda_dl;
+
+    memset(npp_ctx, 0, sizeof(*npp_ctx));
+
+    npp_ctx->hStream       = (cudaStream_t)hwctx->stream;
+    npp_ctx->nCudaDeviceId = hwctx->internal->cuda_device;
+
+    ret = FF_CUDA_CHECK_DL(ctx, cu,
+                           cu->cuDeviceGetAttribute(&npp_ctx->nMultiProcessorCount,
+                                                    CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,
+                                                    hwctx->internal->cuda_device));
+    if (ret < 0)
+        return ret;
+
+    ret = FF_CUDA_CHECK_DL(ctx, cu,
+                           cu->cuDeviceGetAttribute(&npp_ctx->nCudaDevAttrComputeCapabilityMajor,
+                                                    CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+                                                    hwctx->internal->cuda_device));
+    if (ret < 0)
+        return ret;
+
+    ret = FF_CUDA_CHECK_DL(ctx, cu,
+                           cu->cuDeviceGetAttribute(&npp_ctx->nCudaDevAttrComputeCapabilityMinor,
+                                                    CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+                                                    hwctx->internal->cuda_device));
+    if (ret < 0)
+        return ret;
+
+    npp_ctx->nStreamFlags = 0;
+    npp_ctx->nReserved0   = 0;
+
+    return 0;
+}
+#endif
 
 static const enum AVPixelFormat supported_formats[] = {
     AV_PIX_FMT_YUV420P,
@@ -292,6 +346,15 @@ static int npptranspose_rotate(AVFilterContext *ctx, NPPTransposeStageContext *s
     NppStatus err;
     int i;
 
+#if NPP_VERSION_MAJOR >= 12
+    NppStreamContext npp_ctx;
+    {
+        int ret = init_npp_stream_context(ctx, out, &npp_ctx);
+        if (ret < 0)
+            return ret;
+    }
+#endif
+
     for (i = 0; i < FF_ARRAY_ELEMS(stage->planes_in) && i < FF_ARRAY_ELEMS(in->data) && in->data[i]; i++) {
         int iw = stage->planes_in[i].width;
         int ih = stage->planes_in[i].height;
@@ -305,11 +368,19 @@ static int npptranspose_rotate(AVFilterContext *ctx, NPPTransposeStageContext *s
         int shiftw = (s->dir == NPP_TRANSPOSE_CLOCK  || s->dir == NPP_TRANSPOSE_CLOCK_FLIP) ? ow - 1 : 0;
         int shifth = (s->dir == NPP_TRANSPOSE_CCLOCK || s->dir == NPP_TRANSPOSE_CLOCK_FLIP) ? oh - 1 : 0;
 
+#if NPP_VERSION_MAJOR >= 12
+        err = nppiRotate_8u_C1R_Ctx(in->data[i], (NppiSize){ iw, ih },
+                                    in->linesize[i], (NppiRect){ 0, 0, iw, ih },
+                                    out->data[i], out->linesize[i],
+                                    (NppiRect){ 0, 0, ow, oh },
+                                    angle, shiftw, shifth, NPPI_INTER_NN, npp_ctx);
+#else
         err = nppiRotate_8u_C1R(in->data[i], (NppiSize){ iw, ih },
                                 in->linesize[i], (NppiRect){ 0, 0, iw, ih },
                                 out->data[i], out->linesize[i],
                                 (NppiRect){ 0, 0, ow, oh },
                                 angle, shiftw, shifth, NPPI_INTER_NN);
+#endif
         if (err != NPP_SUCCESS) {
             av_log(ctx, AV_LOG_ERROR, "NPP rotate error: %d\n", err);
             return AVERROR_UNKNOWN;
@@ -325,13 +396,28 @@ static int npptranspose_transpose(AVFilterContext *ctx, NPPTransposeStageContext
     NppStatus err;
     int i;
 
+#if NPP_VERSION_MAJOR >= 12
+    NppStreamContext npp_ctx;
+    {
+        int ret = init_npp_stream_context(ctx, out, &npp_ctx);
+        if (ret < 0)
+            return ret;
+    }
+#endif
+
     for (i = 0; i < FF_ARRAY_ELEMS(stage->planes_in) && i < FF_ARRAY_ELEMS(in->data) && in->data[i]; i++) {
         int iw = stage->planes_in[i].width;
         int ih = stage->planes_in[i].height;
 
+#if NPP_VERSION_MAJOR >= 12
+        err = nppiTranspose_8u_C1R_Ctx(in->data[i], in->linesize[i],
+                                       out->data[i], out->linesize[i],
+                                       (NppiSize){ iw, ih }, npp_ctx);
+#else
         err = nppiTranspose_8u_C1R(in->data[i], in->linesize[i],
                                    out->data[i], out->linesize[i],
                                    (NppiSize){ iw, ih });
+#endif
         if (err != NPP_SUCCESS) {
             av_log(ctx, AV_LOG_ERROR, "NPP transpose error: %d\n", err);
             return AVERROR_UNKNOWN;

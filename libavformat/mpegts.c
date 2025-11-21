@@ -1306,8 +1306,11 @@ skip:
                     p += sl_header_bytes;
                     buf_size -= sl_header_bytes;
                 }
-                if (pes->st->codecpar->codec_id == AV_CODEC_ID_SMPTE_KLV && buf_size >= 5) {
-                    /* skip metadata access unit header */
+                if (pes->stream_type == STREAM_TYPE_METADATA &&
+                    pes->stream_id == STREAM_ID_METADATA_STREAM &&
+                    pes->st->codecpar->codec_id == AV_CODEC_ID_SMPTE_KLV &&
+                    buf_size >= 5) {
+                    /* skip metadata access unit header - see MISB ST 1402 */
                     pes->pes_header_size += 5;
                     p += 5;
                     buf_size -= 5;
@@ -1669,6 +1672,8 @@ static int mp4_read_iods(AVFormatContext *s, const uint8_t *buf, unsigned size,
 {
     MP4DescrParseContext d;
     int ret;
+
+    d.predefined_SLConfigDescriptor_seen = 0;
 
     ret = init_MP4DescrParseContext(&d, s, buf, size, descr, max_descr_count);
     if (ret < 0)
@@ -2601,7 +2606,8 @@ static void pat_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                     FFSWAP(struct Program, ts->prg[nb_prg], ts->prg[prg_idx]);
                 if (prg_idx >= nb_prg)
                     nb_prg++;
-            }
+            } else
+                nb_prg = 0;
         }
     }
     ts->nb_prg = nb_prg;

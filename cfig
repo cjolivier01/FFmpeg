@@ -2,7 +2,14 @@
 
 prefix=/usr/local/
 
-./configure \
+SCRIPT_DIR=$(dirname $0)
+
+AMF_ARGS=""
+if [ ! -z "$(which rocm-smi)" ]; then
+  AMF_ARGS="--enable-amf --enable-encoder=hevc_amf --enable-decoder=hevc_amf"
+fi
+
+${SCRIPT_DIR}/configure \
   --prefix="${prefix}" \
   --extra-cflags='-I/usr/local/cuda/include' \
   --extra-ldflags='-L/usr/local/cuda/lib64' \
@@ -38,6 +45,9 @@ prefix=/usr/local/
   --enable-libfreetype \
   --enable-libfribidi \
   --enable-libharfbuzz \
+  --enable-libvidstab \
+  $AMF_ARGS \
+  --enable-vaapi \
   $@
 
 

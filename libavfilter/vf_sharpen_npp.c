@@ -21,8 +21,7 @@
  * NPP sharpen video filter
  */
 
-#include <nppi.h>
-#include <nppi_filtering_functions.h>
+#include <stdio.h>
 
 #include "internal.h"
 #include "libavutil/pixdesc.h"
@@ -31,7 +30,63 @@
 #include "libavutil/hwcontext_cuda_internal.h"
 #include "libavutil/opt.h"
 
+#include <npp.h>
+#include <nppi_filtering_functions.h>
+
 #define CHECK_CU(x) FF_CUDA_CHECK_DL(ctx, device_hwctx->internal->cuda_dl, x)
+
+#if NPP_VERSION_MAJOR >= 12
+static int init_npp_stream_context(AVFilterContext *ctx, AVFrame *frame,
+                                   NppStreamContext *npp_ctx)
+{
+    AVHWFramesContext *frames_ctx;
+    AVHWDeviceContext *device_ctx;
+    AVCUDADeviceContext *hwctx;
+    CudaFunctions *cu;
+    int ret;
+
+    if (!frame->hw_frames_ctx) {
+        av_log(ctx, AV_LOG_ERROR, "No hw_frames_ctx available for NPP operation.\n");
+        return AVERROR(EINVAL);
+    }
+
+    frames_ctx = (AVHWFramesContext *)frame->hw_frames_ctx->data;
+    device_ctx = frames_ctx->device_ctx;
+    hwctx      = device_ctx->hwctx;
+    cu         = hwctx->internal->cuda_dl;
+
+    memset(npp_ctx, 0, sizeof(*npp_ctx));
+
+    npp_ctx->hStream       = (cudaStream_t)hwctx->stream;
+    npp_ctx->nCudaDeviceId = hwctx->internal->cuda_device;
+
+    ret = FF_CUDA_CHECK_DL(ctx, cu,
+                           cu->cuDeviceGetAttribute(&npp_ctx->nMultiProcessorCount,
+                                                    CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,
+                                                    hwctx->internal->cuda_device));
+    if (ret < 0)
+        return ret;
+
+    ret = FF_CUDA_CHECK_DL(ctx, cu,
+                           cu->cuDeviceGetAttribute(&npp_ctx->nCudaDevAttrComputeCapabilityMajor,
+                                                    CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+                                                    hwctx->internal->cuda_device));
+    if (ret < 0)
+        return ret;
+
+    ret = FF_CUDA_CHECK_DL(ctx, cu,
+                           cu->cuDeviceGetAttribute(&npp_ctx->nCudaDevAttrComputeCapabilityMinor,
+                                                    CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+                                                    hwctx->internal->cuda_device));
+    if (ret < 0)
+        return ret;
+
+    npp_ctx->nStreamFlags = 0;
+    npp_ctx->nReserved0   = 0;
+
+    return 0;
+}
+#endif
 
 static const enum AVPixelFormat supported_formats[] = {
     AV_PIX_FMT_YUV420P,
@@ -158,13 +213,28 @@ static int nppsharpen_sharpen(AVFilterContext* ctx, AVFrame* out, AVFrame* in)
 
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(in_ctx->sw_format);
 
+#if NPP_VERSION_MAJOR >= 12
+    NppStreamContext npp_ctx;
+    {
+        int ret = init_npp_stream_context(ctx, out, &npp_ctx);
+        if (ret < 0)
+            return ret;
+    }
+#endif
+
     for (int i = 0; i < FF_ARRAY_ELEMS(in->data) && in->data[i]; i++) {
         int ow = AV_CEIL_RSHIFT(in->width, (i == 1 || i == 2) ? desc->log2_chroma_w : 0);
         int oh = AV_CEIL_RSHIFT(in->height, (i == 1 || i == 2) ? desc->log2_chroma_h : 0);
 
+#if NPP_VERSION_MAJOR >= 12
+        NppStatus err = nppiFilterSharpenBorder_8u_C1R_Ctx(
+            in->data[i], in->linesize[i], (NppiSize){ow, oh}, (NppiPoint){0, 0},
+            out->data[i], out->linesize[i], (NppiSize){ow, oh}, s->border_type, npp_ctx);
+#else
         NppStatus err = nppiFilterSharpenBorder_8u_C1R(
             in->data[i], in->linesize[i], (NppiSize){ow, oh}, (NppiPoint){0, 0},
             out->data[i], out->linesize[i], (NppiSize){ow, oh}, s->border_type);
+#endif
         if (err != NPP_SUCCESS) {
             av_log(ctx, AV_LOG_ERROR, "NPP sharpen error: %d\n", err);
             return AVERROR_EXTERNAL;
