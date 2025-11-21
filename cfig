@@ -1,6 +1,7 @@
 #!/bin/bash
 
 prefix=/usr/local/
+#prefix=/usr
 
 SCRIPT_DIR=$(dirname $0)
 
