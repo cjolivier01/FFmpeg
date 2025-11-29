@@ -1,7 +1,7 @@
 #!/bin/bash
 
 prefix=/usr/local/
-#prefix=/usr
+# prefix=/usr
 
 SCRIPT_DIR=$(dirname $0)
 
@@ -36,7 +36,7 @@ ${SCRIPT_DIR}/configure \
   --enable-nonfree \
   --enable-cuda-nvcc \
   --enable-libx264 \
-  --enable-libnpp \
+  --disable-libnpp \
   --enable-nvenc \
   --enable-cuvid \
   --enable-nvdec \
