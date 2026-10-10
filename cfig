@@ -1,7 +1,8 @@
 #!/bin/bash
 
-prefix=/usr/local/
+# prefix=/usr/local/
 # prefix=/usr
+prefix=$CONDA_PREFIX
 
 SCRIPT_DIR=$(dirname $0)
 
